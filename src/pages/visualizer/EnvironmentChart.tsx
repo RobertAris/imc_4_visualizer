@@ -11,8 +11,8 @@ export interface EnvironmentChartProps {
 export function EnvironmentChart({ symbol }: EnvironmentChartProps): ReactNode {
   const algorithm = useStore(state => state.algorithm)!;
 
-  const sugarPriceData = [];
-  const sunlightIndexData = [];
+  const sunlightData = [];
+  const humidityData = [];
 
   for (const row of algorithm.data) {
     const observation = row.state.observations.conversionObservations[symbol];
@@ -20,13 +20,13 @@ export function EnvironmentChart({ symbol }: EnvironmentChartProps): ReactNode {
       continue;
     }
 
-    sugarPriceData.push([row.state.timestamp, observation.sugarPrice]);
-    sunlightIndexData.push([row.state.timestamp, observation.sunlightIndex]);
+    sunlightData.push([row.state.timestamp, observation.sunlight]);
+    humidityData.push([row.state.timestamp, observation.humidity]);
   }
 
   const series: Highcharts.SeriesOptionsType[] = [
-    { type: 'line', name: 'Sugar Price', marker: { symbol: 'square' }, yAxis: 0, data: sugarPriceData },
-    { type: 'line', name: 'Sunlight Index', marker: { symbol: 'circle' }, yAxis: 1, data: sunlightIndexData },
+    { type: 'line', name: 'Sunlight', marker: { symbol: 'square' }, yAxis: 0, data: sunlightData },
+    { type: 'line', name: 'Humidity', marker: { symbol: 'circle' }, yAxis: 1, data: humidityData },
   ];
 
   const options: Highcharts.Options = {

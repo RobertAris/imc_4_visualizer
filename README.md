@@ -1,5 +1,23 @@
-# IMC Prosperity 3 Visualizer
+# IMC Prosperity 4 Visualizer
 
-[![Build Status](https://github.com/jmerle/imc-prosperity-3-visualizer/workflows/Build/badge.svg)](https://github.com/jmerle/imc-prosperity-3-visualizer/actions/workflows/build.yml)
+This repository contains a Prosperity 4 oriented visualizer for exploring algorithm logs and backtest output.
 
-This repository contains the source code behind [jmerle.github.io/imc-prosperity-3-visualizer/](https://jmerle.github.io/imc-prosperity-3-visualizer/), a visualizer for [IMC Prosperity 3](https://prosperity.imc.com/) algorithms. It is based on my visualizers for Prosperity [1](https://github.com/jmerle/imc-prosperity-visualizer) and [2](https://github.com/jmerle/imc-prosperity-2-visualizer).
+The main changes are:
+
+- Prosperity 4 branding and project metadata
+- a base path that matches the `imc_4_visualizer` repository name
+- support for Prosperity 4 conversion observations using `sunlight` and `humidity`
+- tutorial-era position limits for `EMERALDS` and `TOMATOES`
+
+## Local development
+
+```sh
+pnpm install
+pnpm dev
+```
+
+## Build
+
+```sh
+pnpm build
+```

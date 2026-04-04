@@ -38,7 +38,7 @@ export function LoadFromProsperity(): ReactNode {
   const round = useStore(state => state.round);
   const setRound = useStore(state => state.setRound);
 
-  const [proxy, setProxy] = useState('https://imc-prosperity-3-visualizer-cors-anywhere.jmerle.dev/');
+  const [proxy, setProxy] = useState('');
 
   const loadAlgorithms = useAsync<AlgorithmSummary[]>(async (): Promise<AlgorithmSummary[]> => {
     let response: AxiosResponse<AlgorithmSummary[]>;
@@ -112,9 +112,8 @@ export function LoadFromProsperity(): ReactNode {
       </Text>
       {/* prettier-ignore */}
       <Text>
-        By default the &quot;Open in visualizer&quot; button routes the HTTP request to download the algorithm&apos;s logs through a <Anchor href="https://github.com/Rob--W/cors-anywhere" target="_blank" rel="noreferrer">CORS Anywhere</Anchor> instance hosted by the creator of this visualizer.
-        This is necessary because the logs need to be downloaded from an AWS S3 endpoint without <Anchor href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Origin" target="_blank" rel="noreferrer">Access-Control-Allow-Origin</Anchor> headers that allow downloads from this visualizer.
-        While I promise no log data is persisted server-side, you are free to change the proxy to one hosted by yourself.
+        The &quot;Open in visualizer&quot; button may need a <Anchor href="https://github.com/Rob--W/cors-anywhere" target="_blank" rel="noreferrer">CORS Anywhere</Anchor> proxy to download algorithm logs from AWS S3 endpoints that do not expose <Anchor href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Origin" target="_blank" rel="noreferrer">Access-Control-Allow-Origin</Anchor> headers for this app.
+        The proxy field is blank by default in this fork, so you can either try a direct download first or provide your own proxy URL.
       </Text>
 
       {loadAlgorithms.error && <ErrorAlert error={loadAlgorithms.error} />}
@@ -138,7 +137,7 @@ export function LoadFromProsperity(): ReactNode {
 
         <TextInput
           label='"Open in visualizer" CORS Anywhere proxy'
-          placeholder="Proxy"
+          placeholder="Optional proxy URL"
           value={proxy}
           onInput={e => setProxy((e.target as HTMLInputElement).value)}
           mt="xs"

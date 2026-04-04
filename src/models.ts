@@ -48,8 +48,8 @@ export interface ConversionObservation {
   transportFees: number;
   exportTariff: number;
   importTariff: number;
-  sugarPrice: number;
-  sunlightIndex: number;
+  sunlight: number;
+  humidity: number;
 }
 
 export interface Observation {
@@ -122,8 +122,8 @@ export type CompressedConversionObservation = [
   transportFees: number,
   exportTariff: number,
   importTariff: number,
-  sugarPrice: number,
-  sunlightIndex: number,
+  sunlight: number,
+  humidity: number,
 ];
 
 export type CompressedObservations = [

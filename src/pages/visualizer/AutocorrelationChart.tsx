@@ -8,6 +8,10 @@ export interface AutocorrelationChartProps {
   symbol: ProsperitySymbol;
 }
 
+function normalizeNearZero(value: number): number {
+  return Math.abs(value) < 1e-6 ? 0 : value;
+}
+
 function autocorrelation(values: number[], lag: number): number {
   const comparableCount = values.length - lag;
   if (comparableCount <= 1) {
@@ -28,7 +32,7 @@ function autocorrelation(values: number[], lag: number): number {
     }
   }
 
-  return denominator === 0 ? 0 : numerator / denominator;
+  return denominator === 0 ? 0 : normalizeNearZero(numerator / denominator);
 }
 
 export function AutocorrelationChart({ symbol }: AutocorrelationChartProps): ReactNode {
@@ -70,6 +74,16 @@ export function AutocorrelationChart({ symbol }: AutocorrelationChartProps): Rea
       max: 1,
       title: {
         text: 'Autocorrelation',
+      },
+      labels: {
+        formatter() {
+          return normalizeNearZero(Number(this.value)).toFixed(2);
+        },
+      },
+    },
+    tooltip: {
+      pointFormatter() {
+        return `<span style="color:${this.color}">\u25cf</span> ${this.series.name}: <b>${normalizeNearZero(this.y ?? 0).toFixed(4)}</b><br/>`;
       },
     },
   };

@@ -8,6 +8,7 @@ The main changes are:
 - a base path that matches the `imc_4_visualizer` repository name
 - support for Prosperity 4 conversion observations using `sunlight` and `humidity`
 - tutorial-era position limits for `EMERALDS` and `TOMATOES`
+- ACF (autocorrelation) plot for data
 
 ## Local development
 

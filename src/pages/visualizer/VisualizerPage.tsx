@@ -4,6 +4,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../store.ts';
 import { formatNumber } from '../../utils/format.ts';
 import { AlgorithmSummaryCard } from './AlgorithmSummaryCard.tsx';
+import { AutocorrelationChart } from './AutocorrelationChart.tsx';
 import { ConversionPriceChart } from './ConversionPriceChart.tsx';
 import { EnvironmentChart } from './EnvironmentChart.tsx';
 import { PlainValueObservationChart } from './PlainValueObservationChart.tsx';
@@ -66,6 +67,12 @@ export function VisualizerPage(): ReactNode {
     symbolColumns.push(
       <Grid.Col key={`${symbol} - symbol`} span={{ xs: 12, sm: 6 }}>
         <VolumeChart symbol={symbol} />
+      </Grid.Col>,
+    );
+
+    symbolColumns.push(
+      <Grid.Col key={`${symbol} - autocorrelation`} span={{ xs: 12, sm: 6 }}>
+        <AutocorrelationChart symbol={symbol} />
       </Grid.Col>,
     );
 

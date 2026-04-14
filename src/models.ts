@@ -99,6 +99,7 @@ export interface AlgorithmDataRow {
 
 export interface Algorithm {
   summary?: AlgorithmSummary;
+  mode?: 'full' | 'market-data-only';
   activityLogs: ActivityLogRow[];
   data: AlgorithmDataRow[];
 }

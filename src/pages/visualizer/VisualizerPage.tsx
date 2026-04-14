@@ -4,7 +4,6 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../store.ts';
 import { formatNumber } from '../../utils/format.ts';
 import { AlgorithmSummaryCard } from './AlgorithmSummaryCard.tsx';
-import { EntropyRateChart } from './EntropyRateChart.tsx';
 import { ConversionPriceChart } from './ConversionPriceChart.tsx';
 import { EnvironmentChart } from './EnvironmentChart.tsx';
 import { PlainValueObservationChart } from './PlainValueObservationChart.tsx';
@@ -18,6 +17,7 @@ import { VolumeChart } from './VolumeChart.tsx';
 
 export function VisualizerPage(): ReactNode {
   const algorithm = useStore(state => state.algorithm);
+  const isMarketDataOnly = algorithm?.mode === 'market-data-only';
 
   const { search } = useLocation();
 
@@ -33,23 +33,31 @@ export function VisualizerPage(): ReactNode {
   }
 
   let profitLoss = 0;
-  const lastTimestamp = algorithm.activityLogs[algorithm.activityLogs.length - 1].timestamp;
-  for (let i = algorithm.activityLogs.length - 1; i >= 0 && algorithm.activityLogs[i].timestamp == lastTimestamp; i--) {
-    profitLoss += algorithm.activityLogs[i].profitLoss;
+  if (!isMarketDataOnly && algorithm.activityLogs.length > 0) {
+    const lastTimestamp = algorithm.activityLogs[algorithm.activityLogs.length - 1].timestamp;
+    for (let i = algorithm.activityLogs.length - 1; i >= 0 && algorithm.activityLogs[i].timestamp == lastTimestamp; i--) {
+      profitLoss += algorithm.activityLogs[i].profitLoss;
+    }
   }
 
   const symbols = new Set<string>();
   const plainValueObservationSymbols = new Set<string>();
 
-  for (let i = 0; i < algorithm.data.length; i += 1000) {
-    const row = algorithm.data[i];
-
-    for (const key of Object.keys(row.state.listings)) {
-      symbols.add(key);
+  if (isMarketDataOnly) {
+    for (const row of algorithm.activityLogs) {
+      symbols.add(row.product);
     }
+  } else {
+    for (let i = 0; i < algorithm.data.length; i += 1000) {
+      const row = algorithm.data[i];
 
-    for (const key of Object.keys(row.state.observations.plainValueObservations)) {
-      plainValueObservationSymbols.add(key);
+      for (const key of Object.keys(row.state.listings)) {
+        symbols.add(key);
+      }
+
+      for (const key of Object.keys(row.state.observations.plainValueObservations)) {
+        plainValueObservationSymbols.add(key);
+      }
     }
   }
 
@@ -67,12 +75,6 @@ export function VisualizerPage(): ReactNode {
     symbolColumns.push(
       <Grid.Col key={`${symbol} - symbol`} span={{ xs: 12, sm: 6 }}>
         <VolumeChart symbol={symbol} />
-      </Grid.Col>,
-    );
-
-    symbolColumns.push(
-      <Grid.Col key={`${symbol} - entropy-rate`} span={{ xs: 12, sm: 6 }}>
-        <EntropyRateChart symbol={symbol} />
       </Grid.Col>,
     );
 
@@ -112,23 +114,31 @@ export function VisualizerPage(): ReactNode {
   return (
     <Container fluid>
       <Grid>
-        <Grid.Col span={12}>
-          <VisualizerCard>
-            <Center>
-              <Title order={2}>Final Profit / Loss: {formatNumber(profitLoss)}</Title>
-            </Center>
-          </VisualizerCard>
-        </Grid.Col>
-        <Grid.Col span={{ xs: 12, sm: 6 }}>
-          <ProfitLossChart symbols={sortedSymbols} />
-        </Grid.Col>
-        <Grid.Col span={{ xs: 12, sm: 6 }}>
-          <PositionChart symbols={sortedSymbols} />
-        </Grid.Col>
+        {!isMarketDataOnly && (
+          <Grid.Col span={12}>
+            <VisualizerCard>
+              <Center>
+                <Title order={2}>Final Profit / Loss: {formatNumber(profitLoss)}</Title>
+              </Center>
+            </VisualizerCard>
+          </Grid.Col>
+        )}
+        {!isMarketDataOnly && (
+          <Grid.Col span={{ xs: 12, sm: 6 }}>
+            <ProfitLossChart symbols={sortedSymbols} />
+          </Grid.Col>
+        )}
+        {!isMarketDataOnly && (
+          <Grid.Col span={{ xs: 12, sm: 6 }}>
+            <PositionChart symbols={sortedSymbols} />
+          </Grid.Col>
+        )}
         {symbolColumns}
-        <Grid.Col span={12}>
-          <TimestampsCard />
-        </Grid.Col>
+        {!isMarketDataOnly && (
+          <Grid.Col span={12}>
+            <TimestampsCard />
+          </Grid.Col>
+        )}
         {algorithm.summary && (
           <Grid.Col span={12}>
             <AlgorithmSummaryCard />

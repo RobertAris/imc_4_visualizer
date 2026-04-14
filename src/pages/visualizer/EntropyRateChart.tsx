@@ -1,73 +1,79 @@
-import Highcharts from 'highcharts';
+import { Stack, Text, Title } from '@mantine/core';
 import { ReactNode } from 'react';
 import { ProsperitySymbol } from '../../models.ts';
 import { useStore } from '../../store.ts';
-import { Chart } from './Chart.tsx';
+import { formatNumber } from '../../utils/format.ts';
+import { VisualizerCard } from './VisualizerCard.tsx';
 
 export interface EntropyRateChartProps {
   symbol: ProsperitySymbol;
 }
 
-function normalizeNearZero(value: number): number {
-  return Math.abs(value) < 1e-6 ? 0 : value;
+const EMBEDDING_DIMENSION = 4;
+const DELAY = 1;
+
+function factorial(value: number): number {
+  let result = 1;
+  for (let i = 2; i <= value; i++) {
+    result *= i;
+  }
+
+  return result;
 }
 
-function toMovementSymbols(values: number[]): string[] {
-  const symbols: string[] = [];
-
-  for (let i = 1; i < values.length; i++) {
-    const change = values[i] - values[i - 1];
-
-    if (change > 0) {
-      symbols.push('U');
-    } else if (change < 0) {
-      symbols.push('D');
-    } else {
-      symbols.push('F');
-    }
-  }
-
-  return symbols;
+function getOrdinalPattern(values: number[]): string {
+  return values
+    .map((value, index) => ({ value, index }))
+    .sort((a, b) => a.value - b.value || a.index - b.index)
+    .map(item => item.index)
+    .join('|');
 }
 
-function estimateConditionalEntropy(symbols: string[], order: number): number {
-  if (symbols.length <= order) {
-    return 0;
+function getPermutationEntropy(values: number[], embeddingDimension: number, delay: number): number | null {
+  const windowSize = 1 + (embeddingDimension - 1) * delay;
+  if (values.length < windowSize) {
+    return null;
   }
 
-  const contextCounts = new Map<string, number>();
-  const transitionCounts = new Map<string, Map<string, number>>();
+  const patternCounts = new Map<string, number>();
+  let totalPatterns = 0;
 
-  for (let i = order; i < symbols.length; i++) {
-    const context = symbols.slice(i - order, i).join('|');
-    const nextSymbol = symbols[i];
+  for (let start = 0; start <= values.length - windowSize; start++) {
+    const window: number[] = [];
 
-    contextCounts.set(context, (contextCounts.get(context) ?? 0) + 1);
-
-    if (!transitionCounts.has(context)) {
-      transitionCounts.set(context, new Map<string, number>());
+    for (let offset = 0; offset < embeddingDimension; offset++) {
+      window.push(values[start + offset * delay]);
     }
 
-    const nextCounts = transitionCounts.get(context)!;
-    nextCounts.set(nextSymbol, (nextCounts.get(nextSymbol) ?? 0) + 1);
+    const pattern = getOrdinalPattern(window);
+    patternCounts.set(pattern, (patternCounts.get(pattern) ?? 0) + 1);
+    totalPatterns += 1;
   }
 
-  const totalTransitions = symbols.length - order;
   let entropy = 0;
-
-  for (const [context, count] of contextCounts) {
-    const nextCounts = transitionCounts.get(context)!;
-    let contextEntropy = 0;
-
-    for (const nextCount of nextCounts.values()) {
-      const probability = nextCount / count;
-      contextEntropy -= probability * Math.log2(probability);
-    }
-
-    entropy += (count / totalTransitions) * contextEntropy;
+  for (const count of patternCounts.values()) {
+    const probability = count / totalPatterns;
+    entropy -= probability * Math.log2(probability);
   }
 
-  return normalizeNearZero(entropy);
+  return entropy / Math.log2(factorial(embeddingDimension));
+}
+
+function getPatternCount(values: number[], embeddingDimension: number, delay: number): number {
+  const windowSize = 1 + (embeddingDimension - 1) * delay;
+  return Math.max(0, values.length - windowSize + 1);
+}
+
+function describeEntropy(value: number): string {
+  if (value < 0.35) {
+    return 'Low local randomness';
+  }
+
+  if (value < 0.7) {
+    return 'Moderate local randomness';
+  }
+
+  return 'High local randomness';
 }
 
 export function EntropyRateChart({ symbol }: EntropyRateChartProps): ReactNode {
@@ -80,51 +86,26 @@ export function EntropyRateChart({ symbol }: EntropyRateChartProps): ReactNode {
     }
   }
 
-  const movementSymbols = toMovementSymbols(midPrices);
-  const maxOrder = Math.min(8, Math.floor(movementSymbols.length / 4));
-  const data = [];
+  const permutationEntropy = getPermutationEntropy(midPrices, EMBEDDING_DIMENSION, DELAY);
+  const patternCount = getPatternCount(midPrices, EMBEDDING_DIMENSION, DELAY);
 
-  for (let order = 1; order <= maxOrder; order++) {
-    data.push([order, estimateConditionalEntropy(movementSymbols, order)]);
-  }
-
-  const options: Highcharts.Options = {
-    xAxis: {
-      title: {
-        text: 'History length',
-      },
-      labels: {
-        formatter() {
-          return String(this.value);
-        },
-      },
-    },
-    yAxis: {
-      allowDecimals: true,
-      min: 0,
-      title: {
-        text: 'Estimated entropy rate of price movements (bits)',
-      },
-      labels: {
-        formatter() {
-          return normalizeNearZero(Number(this.value)).toFixed(2);
-        },
-      },
-    },
-    tooltip: {
-      pointFormatter() {
-        return `<span style="color:${this.color}">\u25cf</span> ${this.series.name}: <b>${normalizeNearZero(this.y ?? 0).toFixed(4)} bits</b><br/>`;
-      },
-    },
-  };
-
-  const series: Highcharts.SeriesOptionsType[] = [
-    {
-      type: 'line',
-      name: 'Conditional entropy of price movements',
-      data,
-    },
-  ];
-
-  return <Chart title={`${symbol} - Entropy Rate`} options={options} series={series} />;
+  return (
+    <VisualizerCard title={`${symbol} - Permutation Entropy`}>
+      {permutationEntropy !== null ? (
+        <Stack gap="xs">
+          <Title order={2}>{formatNumber(permutationEntropy, 4)}</Title>
+          <Text c="dimmed" size="sm">
+            {describeEntropy(permutationEntropy)}. Normalized permutation entropy of the mid-price series using
+            ordinal patterns of length {EMBEDDING_DIMENSION}.
+          </Text>
+          <Text c="dimmed" size="sm">
+            Based on {formatNumber(patternCount)} overlapping patterns with delay {DELAY}. Values near 0 indicate more
+            repeated local structure; values near 1 indicate more random-looking local orderings.
+          </Text>
+        </Stack>
+      ) : (
+        <Text c="dimmed">Not enough price observations to calculate permutation entropy yet.</Text>
+      )}
+    </VisualizerCard>
+  );
 }

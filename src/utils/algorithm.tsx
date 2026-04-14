@@ -276,6 +276,7 @@ export function parseAlgorithmLogs(logs: string, summary?: AlgorithmSummary): Al
 
   return {
     summary,
+    mode: 'full',
     activityLogs,
     data,
   };

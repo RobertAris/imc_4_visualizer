@@ -1,7 +1,6 @@
 import { Slider, SliderProps, Text } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
 import { ReactNode, useState } from 'react';
-import { AlgorithmDataRow } from '../../models.ts';
 import { useStore } from '../../store.ts';
 import { formatNumber } from '../../utils/format.ts';
 import { TimestampDetail } from './TimestampDetail.tsx';
@@ -9,49 +8,39 @@ import { VisualizerCard } from './VisualizerCard.tsx';
 
 export function TimestampsCard(): ReactNode {
   const algorithm = useStore(state => state.algorithm)!;
-
-  const rowsByTimestamp: Record<number, AlgorithmDataRow> = {};
-  for (const row of algorithm.data) {
-    rowsByTimestamp[row.state.timestamp] = row;
-  }
-
-  const timestampMin = algorithm.data[0].state.timestamp;
-  const timestampMax = algorithm.data[algorithm.data.length - 1].state.timestamp;
-  const timestampStep = algorithm.data[1].state.timestamp - algorithm.data[0].state.timestamp;
-
-  const [timestamp, setTimestamp] = useState(timestampMin);
+  const [rowIndex, setRowIndex] = useState(0);
+  const row = algorithm.data[rowIndex];
+  const timestamp = row.state.timestamp;
 
   const marks: SliderProps['marks'] = [];
-  for (let i = timestampMin; i < timestampMax; i += (timestampMax + 100) / 4) {
+  const markDivisor = Math.min(4, Math.max(1, algorithm.data.length - 1));
+  for (let i = 0; i <= markDivisor; i++) {
+    const index = Math.min(algorithm.data.length - 1, Math.round((i * (algorithm.data.length - 1)) / markDivisor));
     marks.push({
-      value: i,
-      label: formatNumber(i),
+      value: index,
+      label: formatNumber(algorithm.data[index].state.timestamp),
     });
   }
 
   useHotkeys([
-    ['ArrowLeft', () => setTimestamp(timestamp === timestampMin ? timestamp : timestamp - timestampStep)],
-    ['ArrowRight', () => setTimestamp(timestamp === timestampMax ? timestamp : timestamp + timestampStep)],
+    ['ArrowLeft', () => setRowIndex(index => Math.max(0, index - 1))],
+    ['ArrowRight', () => setRowIndex(index => Math.min(algorithm.data.length - 1, index + 1))],
   ]);
 
   return (
     <VisualizerCard title="Timestamps">
       <Slider
-        min={timestampMin}
-        max={timestampMax}
-        step={timestampStep}
+        min={0}
+        max={Math.max(0, algorithm.data.length - 1)}
+        step={1}
         marks={marks}
-        label={value => `Timestamp ${formatNumber(value)}`}
-        value={timestamp}
-        onChange={setTimestamp}
+        label={value => `Timestamp ${formatNumber(algorithm.data[value].state.timestamp)}`}
+        value={rowIndex}
+        onChange={setRowIndex}
         mb="lg"
       />
 
-      {rowsByTimestamp[timestamp] ? (
-        <TimestampDetail row={rowsByTimestamp[timestamp]} />
-      ) : (
-        <Text>No logs found for timestamp {formatNumber(timestamp)}</Text>
-      )}
+      {row ? <TimestampDetail row={row} /> : <Text>No logs found for timestamp {formatNumber(timestamp)}</Text>}
     </VisualizerCard>
   );
 }

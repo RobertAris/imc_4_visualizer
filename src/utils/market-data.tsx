@@ -1,5 +1,5 @@
 import { Text } from '@mantine/core';
-import { ActivityLogRow, Algorithm } from '../models.ts';
+import { ActivityLogRow, Algorithm, AlgorithmDataRow, Listing, Trade, TradingState } from '../models.ts';
 import { AlgorithmParseError } from './algorithm.tsx';
 
 type CsvRow = Record<string, string>;
@@ -74,6 +74,17 @@ function getLevelValues(row: CsvRow, prefix: 'bid' | 'ask', suffix: 'price' | 'v
   return values;
 }
 
+function getMidPrice(row: CsvRow, rowNumber: number): number {
+  const bidPrices = getLevelValues(row, 'bid', 'price');
+  const askPrices = getLevelValues(row, 'ask', 'price');
+
+  if (bidPrices.length > 0 && askPrices.length > 0) {
+    return (bidPrices[0] + askPrices[0]) / 2;
+  }
+
+  return getNumber(row, 'mid_price', rowNumber);
+}
+
 function parseActivityLogRow(row: CsvRow, rowNumber: number): ActivityLogRow {
   return {
     day: getNumber(row, 'day', rowNumber),
@@ -85,9 +96,62 @@ function parseActivityLogRow(row: CsvRow, rowNumber: number): ActivityLogRow {
     bidVolumes: getLevelValues(row, 'bid', 'volume'),
     askPrices: getLevelValues(row, 'ask', 'price'),
     askVolumes: getLevelValues(row, 'ask', 'volume'),
-    midPrice: getNumber(row, 'mid_price', rowNumber),
+    midPrice: getMidPrice(row, rowNumber),
     profitLoss: getOptionalNumber(row, 'profit_and_loss') ?? 0,
   };
+}
+
+function getRequiredString(row: CsvRow, key: string, rowNumber: number): string {
+  const value = row[key];
+  if (value === undefined || value === '') {
+    throw new AlgorithmParseError(<Text>CSV row {rowNumber} is missing required column `{key}`.</Text>);
+  }
+
+  return value;
+}
+
+function buildListings(symbols: Set<string>, denomination: string): Record<string, Listing> {
+  return Object.fromEntries(
+    [...symbols].sort((a, b) => a.localeCompare(b)).map(symbol => [
+      symbol,
+      {
+        symbol,
+        product: symbol,
+        denomination,
+      },
+    ]),
+  );
+}
+
+function buildSyntheticDataRows(
+  timestamps: number[],
+  listings: Record<string, Listing>,
+  marketTradesByTimestamp: Record<number, Record<string, Trade[]>>,
+): AlgorithmDataRow[] {
+  return timestamps.map(timestamp => {
+    const state: TradingState = {
+      timestamp,
+      traderData: '',
+      listings,
+      orderDepths: {},
+      ownTrades: {},
+      marketTrades: marketTradesByTimestamp[timestamp] ?? {},
+      position: {},
+      observations: {
+        plainValueObservations: {},
+        conversionObservations: {},
+      },
+    };
+
+    return {
+      state,
+      orders: {},
+      conversions: 0,
+      traderData: '',
+      algorithmLogs: '',
+      sandboxLogs: '',
+    };
+  });
 }
 
 export function parseMarketDataCsv(csv: string): Algorithm {
@@ -97,5 +161,54 @@ export function parseMarketDataCsv(csv: string): Algorithm {
     mode: 'market-data-only',
     activityLogs: rows.map((row, index) => parseActivityLogRow(row, index + 2)),
     data: [],
+  };
+}
+
+export function parseTradesCsv(csv: string): Algorithm {
+  const rows = parseCsv(csv);
+  const marketTradesByTimestamp: Record<number, Record<string, Trade[]>> = {};
+  const symbols = new Set<string>();
+  const currencies = new Set<string>();
+
+  rows.forEach((row, index) => {
+    const rowNumber = index + 2;
+    const timestamp = getNumber(row, 'timestamp', rowNumber);
+    const symbol = getRequiredString(row, 'symbol', rowNumber);
+    const currency = getRequiredString(row, 'currency', rowNumber);
+
+    currencies.add(currency);
+    symbols.add(symbol);
+
+    if (marketTradesByTimestamp[timestamp] === undefined) {
+      marketTradesByTimestamp[timestamp] = {};
+    }
+
+    if (marketTradesByTimestamp[timestamp][symbol] === undefined) {
+      marketTradesByTimestamp[timestamp][symbol] = [];
+    }
+
+    marketTradesByTimestamp[timestamp][symbol].push({
+      symbol,
+      buyer: row.buyer ?? '',
+      seller: row.seller ?? '',
+      price: getNumber(row, 'price', rowNumber),
+      quantity: getNumber(row, 'quantity', rowNumber),
+      timestamp,
+    });
+  });
+
+  if (currencies.size > 1) {
+    throw new AlgorithmParseError(<Text>Trades CSV contains multiple currencies, which is not supported.</Text>);
+  }
+
+  const denomination = currencies.values().next().value ?? 'SEASHELLS';
+  const timestamps = Object.keys(marketTradesByTimestamp)
+    .map(Number)
+    .sort((a, b) => a - b);
+
+  return {
+    mode: 'market-data-only',
+    activityLogs: [],
+    data: buildSyntheticDataRows(timestamps, buildListings(symbols, denomination), marketTradesByTimestamp),
   };
 }

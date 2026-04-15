@@ -1,4 +1,4 @@
-import { Center, Container, Grid, Title } from '@mantine/core';
+import { Center, Container, Grid, Text, Title } from '@mantine/core';
 import { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../store.ts';
@@ -11,6 +11,9 @@ import { PositionChart } from './PositionChart.tsx';
 import { ProductPriceChart } from './ProductPriceChart.tsx';
 import { ProfitLossChart } from './ProfitLossChart.tsx';
 import { TimestampsCard } from './TimestampsCard.tsx';
+import { TradeDensityChart } from './TradeDensityChart.tsx';
+import { TradePriceChart } from './TradePriceChart.tsx';
+import { TradeQuantityChart } from './TradeQuantityChart.tsx';
 import { TransportChart } from './TransportChart.tsx';
 import { VisualizerCard } from './VisualizerCard.tsx';
 import { VolumeChart } from './VolumeChart.tsx';
@@ -18,6 +21,9 @@ import { VolumeChart } from './VolumeChart.tsx';
 export function VisualizerPage(): ReactNode {
   const algorithm = useStore(state => state.algorithm);
   const isMarketDataOnly = algorithm?.mode === 'market-data-only';
+  const hasTimestampData = (algorithm?.data.length ?? 0) > 0;
+  const hasActivityLogs = (algorithm?.activityLogs.length ?? 0) > 0;
+  const isTradesOnly = isMarketDataOnly && hasTimestampData && !hasActivityLogs;
 
   const { search } = useLocation();
 
@@ -47,6 +53,16 @@ export function VisualizerPage(): ReactNode {
     for (const row of algorithm.activityLogs) {
       symbols.add(row.product);
     }
+
+    for (const row of algorithm.data) {
+      for (const symbol of Object.keys(row.state.listings)) {
+        symbols.add(symbol);
+      }
+
+      for (const symbol of Object.keys(row.state.marketTrades)) {
+        symbols.add(symbol);
+      }
+    }
   } else {
     for (let i = 0; i < algorithm.data.length; i += 1000) {
       const row = algorithm.data[i];
@@ -65,51 +81,73 @@ export function VisualizerPage(): ReactNode {
   const sortedPlainValueObservationSymbols = [...plainValueObservationSymbols].sort((a, b) => a.localeCompare(b));
 
   const symbolColumns: ReactNode[] = [];
-  sortedSymbols.forEach(symbol => {
-    symbolColumns.push(
-      <Grid.Col key={`${symbol} - product price`} span={{ xs: 12, sm: 6 }}>
-        <ProductPriceChart symbol={symbol} />
-      </Grid.Col>,
-    );
+  if (isTradesOnly) {
+    sortedSymbols.forEach(symbol => {
+      symbolColumns.push(
+        <Grid.Col key={`${symbol} - trade price`} span={{ xs: 12, sm: 6 }}>
+          <TradePriceChart symbol={symbol} />
+        </Grid.Col>,
+      );
 
-    symbolColumns.push(
-      <Grid.Col key={`${symbol} - symbol`} span={{ xs: 12, sm: 6 }}>
-        <VolumeChart symbol={symbol} />
-      </Grid.Col>,
-    );
+      symbolColumns.push(
+        <Grid.Col key={`${symbol} - trade quantity`} span={{ xs: 12, sm: 6 }}>
+          <TradeQuantityChart symbol={symbol} />
+        </Grid.Col>,
+      );
 
-    if (!conversionProducts.has(symbol)) {
-      return;
-    }
+      symbolColumns.push(
+        <Grid.Col key={`${symbol} - trade density`} span={12}>
+          <TradeDensityChart symbol={symbol} />
+        </Grid.Col>,
+      );
+    });
+  } else {
+    sortedSymbols.forEach(symbol => {
+      symbolColumns.push(
+        <Grid.Col key={`${symbol} - product price`} span={{ xs: 12, sm: 6 }}>
+          <ProductPriceChart symbol={symbol} />
+        </Grid.Col>,
+      );
 
-    symbolColumns.push(
-      <Grid.Col key={`${symbol} - conversion price`} span={{ xs: 12, sm: 6 }}>
-        <ConversionPriceChart symbol={symbol} />
-      </Grid.Col>,
-    );
+      symbolColumns.push(
+        <Grid.Col key={`${symbol} - symbol`} span={{ xs: 12, sm: 6 }}>
+          <VolumeChart symbol={symbol} />
+        </Grid.Col>,
+      );
 
-    symbolColumns.push(
-      <Grid.Col key={`${symbol} - transport`} span={{ xs: 12, sm: 6 }}>
-        <TransportChart symbol={symbol} />
-      </Grid.Col>,
-    );
+      if (!conversionProducts.has(symbol)) {
+        return;
+      }
 
-    symbolColumns.push(
-      <Grid.Col key={`${symbol} - environment`} span={{ xs: 12, sm: 6 }}>
-        <EnvironmentChart symbol={symbol} />
-      </Grid.Col>,
-    );
+      symbolColumns.push(
+        <Grid.Col key={`${symbol} - conversion price`} span={{ xs: 12, sm: 6 }}>
+          <ConversionPriceChart symbol={symbol} />
+        </Grid.Col>,
+      );
 
-    symbolColumns.push(<Grid.Col key={`${symbol} - environment`} span={{ xs: 12, sm: 6 }} />);
-  });
+      symbolColumns.push(
+        <Grid.Col key={`${symbol} - transport`} span={{ xs: 12, sm: 6 }}>
+          <TransportChart symbol={symbol} />
+        </Grid.Col>,
+      );
 
-  sortedPlainValueObservationSymbols.forEach(symbol => {
-    symbolColumns.push(
-      <Grid.Col key={`${symbol} - plain value observation`} span={{ xs: 12, sm: 6 }}>
-        <PlainValueObservationChart symbol={symbol} />
-      </Grid.Col>,
-    );
-  });
+      symbolColumns.push(
+        <Grid.Col key={`${symbol} - environment`} span={{ xs: 12, sm: 6 }}>
+          <EnvironmentChart symbol={symbol} />
+        </Grid.Col>,
+      );
+
+      symbolColumns.push(<Grid.Col key={`${symbol} - environment`} span={{ xs: 12, sm: 6 }} />);
+    });
+
+    sortedPlainValueObservationSymbols.forEach(symbol => {
+      symbolColumns.push(
+        <Grid.Col key={`${symbol} - plain value observation`} span={{ xs: 12, sm: 6 }}>
+          <PlainValueObservationChart symbol={symbol} />
+        </Grid.Col>,
+      );
+    });
+  }
 
   return (
     <Container fluid>
@@ -133,8 +171,18 @@ export function VisualizerPage(): ReactNode {
             <PositionChart symbols={sortedSymbols} />
           </Grid.Col>
         )}
+        {isTradesOnly && (
+          <Grid.Col span={12}>
+            <VisualizerCard title="Trades Data">
+              <Text>
+                Loaded a trades CSV. Bubble size in the execution chart scales with quantity, and the density chart
+                buckets trades over time so bursts of activity stand out quickly.
+              </Text>
+            </VisualizerCard>
+          </Grid.Col>
+        )}
         {symbolColumns}
-        {!isMarketDataOnly && (
+        {hasTimestampData && (
           <Grid.Col span={12}>
             <TimestampsCard />
           </Grid.Col>

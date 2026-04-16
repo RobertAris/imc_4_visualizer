@@ -43,16 +43,21 @@ function getColumnValues(columns: string[], indices: number[]): number[] {
   return values;
 }
 
-function getActivityLogs(logLines: string[]): ActivityLogRow[] {
-  const headerIndex = logLines.indexOf('Activities log:');
-  if (headerIndex === -1) {
-    return [];
+function getActivityLogMidPrice(columns: string[]): number {
+  const bestBid = columns[3];
+  const bestAsk = columns[9];
+
+  if (bestBid !== '' && bestAsk !== '') {
+    return (Number(bestBid) + Number(bestAsk)) / 2;
   }
 
+  return columns[15] === '' ? Number.NaN : Number(columns[15]);
+}
+
+function parseActivityLogLines(lines: string[]): ActivityLogRow[] {
   const rows: ActivityLogRow[] = [];
 
-  for (let i = headerIndex + 2; i < logLines.length; i++) {
-    const line = logLines[i];
+  for (const line of lines) {
     if (line === '') {
       break;
     }
@@ -67,12 +72,21 @@ function getActivityLogs(logLines: string[]): ActivityLogRow[] {
       bidVolumes: getColumnValues(columns, [4, 6, 8]),
       askPrices: getColumnValues(columns, [9, 11, 13]),
       askVolumes: getColumnValues(columns, [10, 12, 14]),
-      midPrice: Number(columns[15]),
+      midPrice: getActivityLogMidPrice(columns),
       profitLoss: Number(columns[16]),
     });
   }
 
   return rows;
+}
+
+function getActivityLogs(logLines: string[]): ActivityLogRow[] {
+  const headerIndex = logLines.indexOf('Activities log:');
+  if (headerIndex === -1) {
+    return [];
+  }
+
+  return parseActivityLogLines(logLines.slice(headerIndex + 2));
 }
 
 function decompressListings(compressed: CompressedListing[]): Record<ProsperitySymbol, Listing> {
@@ -191,6 +205,26 @@ function decompressDataRow(compressed: CompressedAlgorithmDataRow, sandboxLogs: 
   };
 }
 
+function parseCompressedDataRow(encoded: string, sandboxLogs: string): AlgorithmDataRow {
+  try {
+    const compressedDataRow = encoded.trim().startsWith('[[')
+      ? JSON.parse(encoded)
+      : JSON.parse(JSON.parse('"' + encoded + '"'));
+    return decompressDataRow(compressedDataRow, sandboxLogs);
+  } catch (err) {
+    console.error(err);
+
+    throw new AlgorithmParseError(
+      (
+        <>
+          <Text>Logs are in invalid format. Could not parse the following compressed row:</Text>
+          <Text>{encoded}</Text>
+        </>
+      ),
+    );
+  }
+}
+
 function getAlgorithmData(logLines: string[]): AlgorithmDataRow[] {
   const headerIndex = logLines.indexOf('Sandbox logs:');
   if (headerIndex === -1) {
@@ -230,8 +264,7 @@ function getAlgorithmData(logLines: string[]): AlgorithmDataRow[] {
     const end = line.lastIndexOf(']') + 1;
 
     try {
-      const compressedDataRow = JSON.parse(JSON.parse('"' + line.substring(start, end) + '"'));
-      rows.push(decompressDataRow(compressedDataRow, nextSandboxLogs));
+      rows.push(parseCompressedDataRow(line.substring(start, end), nextSandboxLogs));
     } catch (err) {
       console.log(line);
       console.error(err);
@@ -245,6 +278,40 @@ function getAlgorithmData(logLines: string[]): AlgorithmDataRow[] {
         ),
       );
     }
+  }
+
+  return rows;
+}
+
+interface ProsperitySubmissionLogEntry {
+  sandboxLog: string | null;
+  lambdaLog: string | null;
+  timestamp: number;
+}
+
+interface ProsperitySubmissionFile {
+  activitiesLog: string;
+  logs: ProsperitySubmissionLogEntry[];
+}
+
+function getSubmissionActivityLogs(activitiesLog: string): ActivityLogRow[] {
+  const lines = activitiesLog.trim().split(/\r?\n/);
+  if (lines.length <= 1) {
+    return [];
+  }
+
+  return parseActivityLogLines(lines.slice(1));
+}
+
+function getSubmissionAlgorithmData(entries: ProsperitySubmissionLogEntry[]): AlgorithmDataRow[] {
+  const rows: AlgorithmDataRow[] = [];
+
+  for (const entry of entries) {
+    if (!entry.lambdaLog || !entry.lambdaLog.startsWith('[[')) {
+      continue;
+    }
+
+    rows.push(parseCompressedDataRow(entry.lambdaLog, entry.sandboxLog?.trim() ?? ''));
   }
 
   return rows;
@@ -276,6 +343,33 @@ export function parseAlgorithmLogs(logs: string, summary?: AlgorithmSummary): Al
 
   return {
     summary,
+    mode: 'full',
+    activityLogs,
+    data,
+  };
+}
+
+export function parseProsperitySubmissionFile(logs: string): Algorithm {
+  let parsed: ProsperitySubmissionFile;
+
+  try {
+    parsed = JSON.parse(logs) as ProsperitySubmissionFile;
+  } catch {
+    throw new AlgorithmParseError(<Text>Submission file is not valid JSON.</Text>);
+  }
+
+  if (typeof parsed.activitiesLog !== 'string' || !Array.isArray(parsed.logs)) {
+    throw new AlgorithmParseError(<Text>Submission file is missing `activitiesLog` or `logs`.</Text>);
+  }
+
+  const activityLogs = getSubmissionActivityLogs(parsed.activitiesLog);
+  const data = getSubmissionAlgorithmData(parsed.logs);
+
+  if (activityLogs.length === 0 && data.length === 0) {
+    throw new AlgorithmParseError(<Text>Submission file does not contain usable activity logs or lambda logs.</Text>);
+  }
+
+  return {
     mode: 'full',
     activityLogs,
     data,

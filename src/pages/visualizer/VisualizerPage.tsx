@@ -15,6 +15,7 @@ import { TradeDensityChart } from './TradeDensityChart.tsx';
 import { TradePriceChart } from './TradePriceChart.tsx';
 import { TradeQuantityChart } from './TradeQuantityChart.tsx';
 import { TransportChart } from './TransportChart.tsx';
+import { PerformanceSummaryCard } from './PerformanceSummaryCard.tsx';
 import { VisualizerCard } from './VisualizerCard.tsx';
 import { VolumeChart } from './VolumeChart.tsx';
 
@@ -190,6 +191,11 @@ export function VisualizerPage(): ReactNode {
         {algorithm.summary && (
           <Grid.Col span={12}>
             <AlgorithmSummaryCard />
+          </Grid.Col>
+        )}
+        {!isMarketDataOnly && (
+          <Grid.Col span={12}>
+            <PerformanceSummaryCard />
           </Grid.Col>
         )}
       </Grid>

@@ -62,6 +62,7 @@ export function Chart({ title, options, series, min, max }: ChartProps): ReactNo
         height: 400,
         zooming: {
           type: 'x',
+          pinchType: 'x',
         },
         panning: {
           enabled: true,
@@ -92,6 +93,9 @@ export function Chart({ title, options, series, min, max }: ChartProps): ReactNo
           },
         },
       },
+      lang: {
+        resetZoom: 'Reset view',
+      },
       title: {
         text: title,
       },
@@ -118,6 +122,7 @@ export function Chart({ title, options, series, min, max }: ChartProps): ReactNo
       },
       xAxis: {
         type: 'datetime',
+        minRange: 100,
         title: {
           text: 'Timestamp',
         },
@@ -139,6 +144,14 @@ export function Chart({ title, options, series, min, max }: ChartProps): ReactNo
         shared: true,
         outside: true,
       },
+      exporting: {
+        buttons: {
+          contextButton: {
+            align: 'right',
+            verticalAlign: 'top',
+          },
+        },
+      },
       legend: {
         enabled: true,
       },
@@ -149,7 +162,11 @@ export function Chart({ title, options, series, min, max }: ChartProps): ReactNo
         enabled: false,
       },
       scrollbar: {
-        enabled: false,
+        enabled: true,
+        liveRedraw: true,
+        height: 10,
+        margin: 8,
+        barBorderRadius: 5,
       },
       series,
       ...options,

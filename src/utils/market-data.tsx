@@ -1,5 +1,5 @@
 import { Text } from '@mantine/core';
-import { ActivityLogRow, Algorithm, AlgorithmDataRow, Listing, Trade, TradingState } from '../models.ts';
+import { ActivityLogRow, Algorithm, AlgorithmDataRow, Listing, OrderDepth, Trade, TradingState } from '../models.ts';
 import { AlgorithmParseError } from './algorithm.tsx';
 
 type CsvRow = Record<string, string>;
@@ -154,13 +154,67 @@ function buildSyntheticDataRows(
   });
 }
 
+function buildOrderDepth(row: ActivityLogRow): OrderDepth {
+  const buyOrders = Object.fromEntries(
+    row.bidPrices.map((price, index) => [price, row.bidVolumes[index]]).filter(([, volume]) => volume !== undefined),
+  );
+  const sellOrders = Object.fromEntries(
+    row.askPrices.map((price, index) => [price, -Math.abs(row.askVolumes[index])]).filter(([, volume]) => volume !== undefined),
+  );
+
+  return {
+    buyOrders,
+    sellOrders,
+  };
+}
+
+function buildMarketDataRows(activityLogs: ActivityLogRow[]): AlgorithmDataRow[] {
+  const timestamps = [...new Set(activityLogs.map(row => row.timestamp))].sort((a, b) => a - b);
+  const symbols = new Set(activityLogs.map(row => row.product));
+  const listings = buildListings(symbols, 'SEASHELLS');
+  const rowsByTimestamp = new Map<number, ActivityLogRow[]>();
+
+  activityLogs.forEach(row => {
+    const rows = rowsByTimestamp.get(row.timestamp) ?? [];
+    rows.push(row);
+    rowsByTimestamp.set(row.timestamp, rows);
+  });
+
+  return timestamps.map(timestamp => {
+    const timestampRows = rowsByTimestamp.get(timestamp) ?? [];
+    const orderDepths = Object.fromEntries(timestampRows.map(row => [row.product, buildOrderDepth(row)]));
+
+    return {
+      state: {
+        timestamp,
+        traderData: '',
+        listings,
+        orderDepths,
+        ownTrades: {},
+        marketTrades: {},
+        position: {},
+        observations: {
+          plainValueObservations: {},
+          conversionObservations: {},
+        },
+      },
+      orders: {},
+      conversions: 0,
+      traderData: '',
+      algorithmLogs: '',
+      sandboxLogs: '',
+    };
+  });
+}
+
 export function parseMarketDataCsv(csv: string): Algorithm {
   const rows = parseCsv(csv);
+  const activityLogs = rows.map((row, index) => parseActivityLogRow(row, index + 2));
 
   return {
     mode: 'market-data-only',
-    activityLogs: rows.map((row, index) => parseActivityLogRow(row, index + 2)),
-    data: [],
+    activityLogs,
+    data: buildMarketDataRows(activityLogs),
   };
 }
 

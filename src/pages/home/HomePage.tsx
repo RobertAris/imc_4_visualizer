@@ -3,10 +3,10 @@ import { ReactNode } from 'react';
 import { ScrollableCodeHighlight } from '../../components/ScrollableCodeHighlight.tsx';
 import { HomeCard } from './HomeCard.tsx';
 import { LoadFromFile } from './LoadFromFile.tsx';
-import { LoadSubmissionFile } from './LoadSubmissionFile.tsx';
 import { LoadFromProsperity } from './LoadFromProsperity.tsx';
 import { LoadFromUrl } from './LoadFromUrl.tsx';
 import { LoadMarketDataFile } from './LoadMarketDataFile.tsx';
+import { LoadSubmissionFile } from './LoadSubmissionFile.tsx';
 import { LoadTradesDataFile } from './LoadTradesDataFile.tsx';
 
 export function HomePage(): ReactNode {

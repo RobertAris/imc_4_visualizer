@@ -1,11 +1,13 @@
-import { Center, Container, Grid, Text, Title } from '@mantine/core';
-import { ReactNode } from 'react';
+import { Center, Container, Grid, SegmentedControl, Text, Title } from '@mantine/core';
+import { ReactNode, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../store.ts';
 import { formatNumber } from '../../utils/format.ts';
 import { AlgorithmSummaryCard } from './AlgorithmSummaryCard.tsx';
 import { ConversionPriceChart } from './ConversionPriceChart.tsx';
+import { DashboardVisualizer } from './DashboardVisualizer.tsx';
 import { EnvironmentChart } from './EnvironmentChart.tsx';
+import { PerformanceSummaryCard } from './PerformanceSummaryCard.tsx';
 import { PlainValueObservationChart } from './PlainValueObservationChart.tsx';
 import { PositionChart } from './PositionChart.tsx';
 import { ProductPriceChart } from './ProductPriceChart.tsx';
@@ -15,12 +17,12 @@ import { TradeDensityChart } from './TradeDensityChart.tsx';
 import { TradePriceChart } from './TradePriceChart.tsx';
 import { TradeQuantityChart } from './TradeQuantityChart.tsx';
 import { TransportChart } from './TransportChart.tsx';
-import { PerformanceSummaryCard } from './PerformanceSummaryCard.tsx';
 import { VisualizerCard } from './VisualizerCard.tsx';
 import { VolumeChart } from './VolumeChart.tsx';
 
 export function VisualizerPage(): ReactNode {
   const algorithm = useStore(state => state.algorithm);
+  const [visualizerMode, setVisualizerMode] = useState<'classic' | 'dashboard'>('classic');
   const isMarketDataOnly = algorithm?.mode === 'market-data-only';
   const hasTimestampData = (algorithm?.data.length ?? 0) > 0;
   const hasActivityLogs = (algorithm?.activityLogs.length ?? 0) > 0;
@@ -42,7 +44,11 @@ export function VisualizerPage(): ReactNode {
   let profitLoss = 0;
   if (!isMarketDataOnly && algorithm.activityLogs.length > 0) {
     const lastTimestamp = algorithm.activityLogs[algorithm.activityLogs.length - 1].timestamp;
-    for (let i = algorithm.activityLogs.length - 1; i >= 0 && algorithm.activityLogs[i].timestamp == lastTimestamp; i--) {
+    for (
+      let i = algorithm.activityLogs.length - 1;
+      i >= 0 && algorithm.activityLogs[i].timestamp == lastTimestamp;
+      i--
+    ) {
       profitLoss += algorithm.activityLogs[i].profitLoss;
     }
   }
@@ -152,53 +158,72 @@ export function VisualizerPage(): ReactNode {
 
   return (
     <Container fluid>
-      <Grid>
-        {!isMarketDataOnly && (
-          <Grid.Col span={12}>
-            <VisualizerCard>
-              <Center>
-                <Title order={2}>Final Profit / Loss: {formatNumber(profitLoss)}</Title>
-              </Center>
-            </VisualizerCard>
-          </Grid.Col>
-        )}
-        {!isMarketDataOnly && (
-          <Grid.Col span={{ xs: 12, sm: 6 }}>
-            <ProfitLossChart symbols={sortedSymbols} />
-          </Grid.Col>
-        )}
-        {!isMarketDataOnly && (
-          <Grid.Col span={{ xs: 12, sm: 6 }}>
-            <PositionChart symbols={sortedSymbols} />
-          </Grid.Col>
-        )}
-        {isTradesOnly && (
-          <Grid.Col span={12}>
-            <VisualizerCard title="Trades Data">
-              <Text>
-                Loaded a trades CSV. Bubble size in the execution chart scales with quantity, and the density chart
-                buckets trades over time so bursts of activity stand out quickly.
-              </Text>
-            </VisualizerCard>
-          </Grid.Col>
-        )}
-        {symbolColumns}
-        {hasTimestampData && (
-          <Grid.Col span={12}>
-            <TimestampsCard />
-          </Grid.Col>
-        )}
-        {algorithm.summary && (
-          <Grid.Col span={12}>
-            <AlgorithmSummaryCard />
-          </Grid.Col>
-        )}
-        {!isMarketDataOnly && (
-          <Grid.Col span={12}>
-            <PerformanceSummaryCard />
-          </Grid.Col>
-        )}
+      <Grid mb="md">
+        <Grid.Col span={12}>
+          <Center>
+            <SegmentedControl
+              value={visualizerMode}
+              onChange={value => setVisualizerMode(value as 'classic' | 'dashboard')}
+              data={[
+                { label: 'Classic', value: 'classic' },
+                { label: 'Dashboard', value: 'dashboard' },
+              ]}
+            />
+          </Center>
+        </Grid.Col>
       </Grid>
+
+      {visualizerMode === 'dashboard' ? (
+        <DashboardVisualizer />
+      ) : (
+        <Grid>
+          {!isMarketDataOnly && (
+            <Grid.Col span={12}>
+              <VisualizerCard>
+                <Center>
+                  <Title order={2}>Final Profit / Loss: {formatNumber(profitLoss)}</Title>
+                </Center>
+              </VisualizerCard>
+            </Grid.Col>
+          )}
+          {!isMarketDataOnly && (
+            <Grid.Col span={{ xs: 12, sm: 6 }}>
+              <ProfitLossChart symbols={sortedSymbols} />
+            </Grid.Col>
+          )}
+          {!isMarketDataOnly && (
+            <Grid.Col span={{ xs: 12, sm: 6 }}>
+              <PositionChart symbols={sortedSymbols} />
+            </Grid.Col>
+          )}
+          {isTradesOnly && (
+            <Grid.Col span={12}>
+              <VisualizerCard title="Trades Data">
+                <Text>
+                  Loaded a trades CSV. Bubble size in the execution chart scales with quantity, and the density chart
+                  buckets trades over time so bursts of activity stand out quickly.
+                </Text>
+              </VisualizerCard>
+            </Grid.Col>
+          )}
+          {symbolColumns}
+          {hasTimestampData && (
+            <Grid.Col span={12}>
+              <TimestampsCard />
+            </Grid.Col>
+          )}
+          {algorithm.summary && (
+            <Grid.Col span={12}>
+              <AlgorithmSummaryCard />
+            </Grid.Col>
+          )}
+          {!isMarketDataOnly && (
+            <Grid.Col span={12}>
+              <PerformanceSummaryCard />
+            </Grid.Col>
+          )}
+        </Grid>
+      )}
     </Container>
   );
 }

@@ -573,6 +573,20 @@ function getSubmissionAlgorithmData(entries: ProsperitySubmissionLogEntry[]): Al
 }
 
 export function parseAlgorithmLogs(logs: string, summary?: AlgorithmSummary): Algorithm {
+  const trimmedForJson = logs.trim();
+  /** Default prosperity4bt output is single-line JSON; "Load from file" historically expected legacy text sections. */
+  if (trimmedForJson.startsWith('{')) {
+    try {
+      const asJson = JSON.parse(trimmedForJson) as { activitiesLog?: unknown };
+      if (typeof asJson.activitiesLog === 'string') {
+        const fromSubmission = parseProsperitySubmissionFile(logs);
+        return summary !== undefined ? { ...fromSubmission, summary } : fromSubmission;
+      }
+    } catch {
+      // Continue with line-based Prosperity text log parsing.
+    }
+  }
+
   const logLines = logs.trim().split(/\r?\n/);
 
   const activityLogs = getActivityLogs(logLines);

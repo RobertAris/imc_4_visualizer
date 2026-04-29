@@ -289,9 +289,264 @@ interface ProsperitySubmissionLogEntry {
   timestamp: number;
 }
 
+interface SimulatorTradeHistoryRow {
+  timestamp: number;
+  symbol: string;
+  price: number;
+  quantity: number;
+  buyer?: string;
+  seller?: string;
+}
+
+interface SimulatorPositionSnapshot {
+  symbol: string;
+  quantity: number;
+}
+
 interface ProsperitySubmissionFile {
   activitiesLog: string;
-  logs: ProsperitySubmissionLogEntry[];
+  /** May be omitted in IMC simulator result bundles (`560891`-style `.json`). */
+  logs?: ProsperitySubmissionLogEntry[];
+  /** Present on full simulator / submission dumps; truncated `lambdaLog` fragments are reconstructed from this. */
+  tradeHistory?: SimulatorTradeHistoryRow[];
+  /** Simulator-only final inventory (no per-timestamp path); used when neither `logs` nor `tradeHistory` can drive `data`. */
+  positions?: SimulatorPositionSnapshot[];
+}
+
+function simulatorListingsFromActivity(activityLogs: ActivityLogRow[]): Record<string, Listing> {
+  const names = [...new Set(activityLogs.map(row => row.product))].sort((a, b) => a.localeCompare(b));
+
+  return Object.fromEntries(
+    names.map(name => [
+      name,
+      {
+        symbol: name,
+        product: name,
+        denomination: 'SEASHELLS',
+      },
+    ]),
+  );
+}
+
+/** Matches `market-data.tsx` so order book panels align with activity CSV rows. */
+function simulatorOrderDepthFromRow(row: ActivityLogRow): OrderDepth {
+  const buyOrders = Object.fromEntries(
+    row.bidPrices.map((price, index) => [price, row.bidVolumes[index]]).filter(([, volume]) => volume !== undefined),
+  );
+
+  const sellOrders = Object.fromEntries(
+    row.askPrices.map((price, index) => [price, -Math.abs(row.askVolumes[index])]).filter(([, volume]) => volume !== undefined),
+  );
+
+  return {
+    buyOrders,
+    sellOrders,
+  };
+}
+
+function simulatorOrderDepthsAtTimestamp(timestamp: number, activityLogs: ActivityLogRow[]): Record<string, OrderDepth> {
+  return Object.fromEntries(
+    activityLogs.filter(row => row.timestamp === timestamp).map(row => [row.product, simulatorOrderDepthFromRow(row)]),
+  );
+}
+
+function emptyTradingObservation(): Observation {
+  return {
+    plainValueObservations: {},
+    conversionObservations: {},
+  };
+}
+
+function uniqueSortedTimestamps(activityLogs: ActivityLogRow[]): number[] {
+  return [...new Set(activityLogs.map(row => row.timestamp))].sort((a, b) => a - b);
+}
+
+/** SUBMISSION-involved fills only — matches bookkeeping used to reconcile simulator `positions`. */
+function applySimulatorTrade(position: Record<Product, number>, trade: SimulatorTradeHistoryRow): void {
+  if (trade.buyer === 'SUBMISSION') {
+    position[trade.symbol] = (position[trade.symbol] ?? 0) + trade.quantity;
+    return;
+  }
+  if (trade.seller === 'SUBMISSION') {
+    position[trade.symbol] = (position[trade.symbol] ?? 0) - trade.quantity;
+  }
+}
+
+function isSubmissionSimulatorTrade(trade: SimulatorTradeHistoryRow): boolean {
+  return trade.buyer === 'SUBMISSION' || trade.seller === 'SUBMISSION';
+}
+
+function groupOwnTradesAtTimestamp(timestamp: number, trades: SimulatorTradeHistoryRow[]): Record<ProsperitySymbol, Trade[]> {
+  const out: Record<ProsperitySymbol, Trade[]> = {};
+
+  for (const ht of trades) {
+    if (ht.timestamp !== timestamp || !isSubmissionSimulatorTrade(ht)) {
+      continue;
+    }
+
+    const t: Trade = {
+      symbol: ht.symbol,
+      price: ht.price,
+      quantity: ht.quantity,
+      buyer: ht.buyer ?? '',
+      seller: ht.seller ?? '',
+      timestamp: ht.timestamp,
+    };
+
+    const arr = out[ht.symbol];
+    if (arr === undefined) {
+      out[ht.symbol] = [t];
+    } else {
+      arr.push(t);
+    }
+  }
+
+  return out;
+}
+
+function coerceTradeHistory(raw: unknown): SimulatorTradeHistoryRow[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return null;
+  }
+
+  const rows: SimulatorTradeHistoryRow[] = [];
+
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) {
+      continue;
+    }
+    const o = item as Record<string, unknown>;
+    const ts = o.timestamp;
+    const symbol = o.symbol;
+
+    if (typeof ts !== 'number' || typeof symbol !== 'string') {
+      continue;
+    }
+
+    const priceNum = typeof o.price === 'number' ? o.price : Number(o.price);
+    const qtyNum = typeof o.quantity === 'number' ? o.quantity : Number(o.quantity);
+
+    if (!Number.isFinite(priceNum) || !Number.isFinite(qtyNum)) {
+      continue;
+    }
+
+    rows.push({
+      timestamp: ts,
+      symbol,
+      price: priceNum,
+      quantity: qtyNum,
+      buyer: typeof o.buyer === 'string' ? o.buyer : undefined,
+      seller: typeof o.seller === 'string' ? o.seller : undefined,
+    });
+  }
+
+  return rows.length > 0 ? rows : null;
+}
+
+/** Rebuild timeline when `lambdaLog` strings are truncated (IMC simulator ~4KiB cap) so positions / avg-fill panels work. */
+function buildSimulatorDataFromTradeHistory(
+  activityLogs: ActivityLogRow[],
+  tradeHistory: SimulatorTradeHistoryRow[],
+): AlgorithmDataRow[] {
+  const timestamps = uniqueSortedTimestamps(activityLogs);
+  const trades = [...tradeHistory].sort((a, b) => {
+    if (a.timestamp !== b.timestamp) {
+      return a.timestamp - b.timestamp;
+    }
+
+    return a.symbol.localeCompare(b.symbol);
+  });
+
+  const listings = simulatorListingsFromActivity(activityLogs);
+  const cum: Record<Product, number> = {};
+  let ti = 0;
+
+  return timestamps.map(ts => {
+    while (ti < trades.length) {
+      const tr = trades[ti];
+      if (tr.timestamp > ts) {
+        break;
+      }
+      applySimulatorTrade(cum, tr);
+      ti += 1;
+    }
+
+    const ownAtTs = trades.filter(tr => tr.timestamp === ts);
+
+    const state: TradingState = {
+      timestamp: ts,
+      traderData: '',
+      listings,
+      orderDepths: simulatorOrderDepthsAtTimestamp(ts, activityLogs),
+      ownTrades: groupOwnTradesAtTimestamp(ts, ownAtTs),
+      marketTrades: {},
+      position: { ...cum },
+      observations: emptyTradingObservation(),
+    };
+
+    return {
+      state,
+      orders: {},
+      conversions: 0,
+      traderData: '',
+      algorithmLogs: '',
+      sandboxLogs: '',
+    };
+  });
+}
+
+/** Simulator `.json` often ships final `positions` only — replicate as a flat trajectory (no intra-day path). */
+function buildSimulatorDataFromFinalPositions(activityLogs: ActivityLogRow[], positions: SimulatorPositionSnapshot[]): AlgorithmDataRow[] {
+  const timestamps = uniqueSortedTimestamps(activityLogs);
+  const listings = simulatorListingsFromActivity(activityLogs);
+  const pmap: Record<Product, number> = {};
+
+  for (const row of positions) {
+    if (row.symbol !== 'XIRECS') {
+      pmap[row.symbol] = row.quantity;
+    }
+  }
+
+  return timestamps.map(ts => ({
+    state: {
+      timestamp: ts,
+      traderData: '',
+      listings,
+      orderDepths: simulatorOrderDepthsAtTimestamp(ts, activityLogs),
+      ownTrades: {},
+      marketTrades: {},
+      position: { ...pmap },
+      observations: emptyTradingObservation(),
+    },
+    orders: {},
+    conversions: 0,
+    traderData: '',
+    algorithmLogs: '',
+    sandboxLogs: '',
+  }));
+}
+
+/** One row per activity timestamp — empty fills/positions (PnL-from-activities only). */
+function buildMinimalTimestampSkeleton(activityLogs: ActivityLogRow[]): AlgorithmDataRow[] {
+  const listings = simulatorListingsFromActivity(activityLogs);
+
+  return uniqueSortedTimestamps(activityLogs).map(ts => ({
+    state: {
+      timestamp: ts,
+      traderData: '',
+      listings,
+      orderDepths: simulatorOrderDepthsAtTimestamp(ts, activityLogs),
+      ownTrades: {},
+      marketTrades: {},
+      position: {},
+      observations: emptyTradingObservation(),
+    },
+    orders: {},
+    conversions: 0,
+    traderData: '',
+    algorithmLogs: '',
+    sandboxLogs: '',
+  }));
 }
 
 function getSubmissionActivityLogs(activitiesLog: string): ActivityLogRow[] {
@@ -358,15 +613,33 @@ export function parseProsperitySubmissionFile(logs: string): Algorithm {
     throw new AlgorithmParseError(<Text>Submission file is not valid JSON.</Text>);
   }
 
-  if (typeof parsed.activitiesLog !== 'string' || !Array.isArray(parsed.logs)) {
-    throw new AlgorithmParseError(<Text>Submission file is missing `activitiesLog` or `logs`.</Text>);
+  if (typeof parsed.activitiesLog !== 'string') {
+    throw new AlgorithmParseError(<Text>Submission file is missing `activitiesLog`.</Text>);
   }
 
-  const activityLogs = getSubmissionActivityLogs(parsed.activitiesLog);
-  const data = getSubmissionAlgorithmData(parsed.logs);
+  const logsEntries: ProsperitySubmissionLogEntry[] = Array.isArray(parsed.logs) ? parsed.logs : [];
 
-  if (activityLogs.length === 0 && data.length === 0) {
-    throw new AlgorithmParseError(<Text>Submission file does not contain usable activity logs or lambda logs.</Text>);
+  const activityLogs = getSubmissionActivityLogs(parsed.activitiesLog);
+
+  if (activityLogs.length === 0) {
+    throw new AlgorithmParseError(<Text>Submission file does not contain usable activity logs.</Text>);
+  }
+
+  let data = getSubmissionAlgorithmData(logsEntries);
+
+  if (data.length === 0) {
+    const rebuilt = coerceTradeHistory(parsed.tradeHistory);
+    if (rebuilt !== null) {
+      data = buildSimulatorDataFromTradeHistory(activityLogs, rebuilt);
+    }
+  }
+
+  if (data.length === 0 && Array.isArray(parsed.positions) && parsed.positions.length > 0) {
+    data = buildSimulatorDataFromFinalPositions(activityLogs, parsed.positions);
+  }
+
+  if (data.length === 0) {
+    data = buildMinimalTimestampSkeleton(activityLogs);
   }
 
   return {

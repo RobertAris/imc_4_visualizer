@@ -71,6 +71,13 @@ export function VisualizerPage(): ReactNode {
       }
     }
   } else {
+    // Symbols must exist for charts even when compressed `logs`/`listings` are missing — e.g. IMC simulator
+    // tradeHistory reconstruction fills position but leaves listings {} on every row, and sampling only
+    // every 1000th row misses them entirely when data length < 1000.
+    for (const activityRow of algorithm.activityLogs) {
+      symbols.add(activityRow.product);
+    }
+
     for (let i = 0; i < algorithm.data.length; i += 1000) {
       const row = algorithm.data[i];
 
